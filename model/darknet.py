@@ -13,7 +13,7 @@ __all__ = ['DarknetV3', 'get_darknet', 'darknet53']
 
 class HSigmoid(gluon.HybridBlock):
     def __init__(self, **kwargs):
-        super(hsigmoid, self).__init__(**kwargs)
+        super(HSigmoid, self).__init__(**kwargs)
         
     def hybrid_forward(self, F, x, *args, **kwargs):
         out = F.clip(x + 3, a_min=0, a_max=6) / 6
