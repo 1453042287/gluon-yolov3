@@ -11,7 +11,7 @@ from mxnet.gluon.nn import BatchNorm
 __all__ = ['DarknetV3', 'get_darknet', 'darknet53']
 
 
-class hsigmoid(gluon.HybridBlock):
+class HSigmoid(gluon.HybridBlock):
     def __init__(self, **kwargs):
         super(hsigmoid, self).__init__(**kwargs)
         
@@ -36,7 +36,7 @@ def _conv2d_sig(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwa
     cell.add(nn.Conv2D(channel, kernel_size=kernel,
                        strides=stride, padding=padding, use_bias=False))
     cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
-    cell.add(hsigmoid())
+    cell.add(HSigmoid())
     return cell
 
 
