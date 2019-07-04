@@ -319,7 +319,7 @@ class YOLOV3(gluon.HybridBlock):
             self.yolo_outputs = nn.HybridSequential()
             # se_operator
             # ----------------------------------------------------------------------------->
-
+            self.se_blocks = nn.HybridSequential()
             # <-----------------------------------------------------------------------------
             # note that anchors and strides should be used in reverse order
             for i, stage, channel, anchor, stride in zip(
@@ -333,6 +333,9 @@ class YOLOV3(gluon.HybridBlock):
                 if i > 0:
                     self.transitions.add(_conv2d(channel, 1, 0, 1,
                                                  norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                # ----------------------------------------------------------------------------->
+                self.se_blocks.add(SE_Block(channel))
+                # <-----------------------------------------------------------------------------
 
     @property
     def num_class(self):
@@ -387,7 +390,7 @@ class YOLOV3(gluon.HybridBlock):
             routes.append(x)
 
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
-        for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
+        for i, block, output, se in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs, self.se_blocks):
             x, tip = block(x)
             if autograd.is_training():
                 dets, box_centers, box_scales, objness, class_pred, anchors, offsets = output(tip)
@@ -415,8 +418,7 @@ class YOLOV3(gluon.HybridBlock):
 
             # se_operator
             # ----------------------------------------------------------------------------->
-            se_block = SE_Block(x.shape[1])
-            x = se_block(x)
+            x = se(x)
             # <-----------------------------------------------------------------------------
 
         if autograd.is_training():
