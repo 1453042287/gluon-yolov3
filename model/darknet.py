@@ -11,6 +11,12 @@ from mxnet.gluon.nn import BatchNorm
 __all__ = ['DarknetV3', 'get_darknet', 'darknet53']
 
 
+class hsigmoid(gluon.HybridBlock):
+    def hybrid_forward(self, F, x, *args, **kwargs):
+        out = mx.sym.clip(x + 3, a_min=0, a_max=6) / 6
+        return out
+
+
 def _conv2d(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
     """A common conv-bn-leakyrelu cell"""
     cell = nn.HybridSequential(prefix='')
@@ -18,6 +24,16 @@ def _conv2d(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=
                        strides=stride, padding=padding, use_bias=False))
     cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
     cell.add(nn.LeakyReLU(0.1))
+    return cell
+
+
+def _conv2d_sig(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
+    """A common conv-bn-leakyrelu cell"""
+    cell = nn.HybridSequential(prefix='')
+    cell.add(nn.Conv2D(channel, kernel_size=kernel,
+                       strides=stride, padding=padding, use_bias=False))
+    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
+    cell.add(hsigmoid())
     return cell
 
 

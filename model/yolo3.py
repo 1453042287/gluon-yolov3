@@ -11,7 +11,7 @@ from mxnet import gluon
 from mxnet import autograd
 from mxnet.gluon import nn
 from mxnet.gluon.nn import BatchNorm
-from model.darknet import _conv2d, _conv2d_lds, darknet53
+from model.darknet import _conv2d, _conv2d_lds, darknet53, _conv2d_sig
 from model.mobilenet import get_mobilenet, get_mobilenet_v2
 from model.shufflenet import get_shufflenet_v2
 from utils.yolo3_target import YOLOV3TargetMerger
@@ -212,6 +212,12 @@ class YOLODetectionBlockV3(gluon.HybridBlock):
         assert channel % 2 == 0, "channel {} cannot be divided by 2".format(channel)
         with self.name_scope():
             self.body = nn.HybridSequential(prefix='')
+            # se_operator
+            # ----------------------------------------------------------------------------->
+            self.se = nn.HybridSequential(prefix='')
+            self.se.add(_conv2d(channel // 4, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+            self.se.add(_conv2d_sig(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+            # <-----------------------------------------------------------------------------
             for _ in range(2):
                 # 1x1 expand
                 self.body.add(_conv2d(channel * 2, 1, 0, 1,
@@ -225,11 +231,13 @@ class YOLODetectionBlockV3(gluon.HybridBlock):
 
     # pylint: disable=unused-argument
     def hybrid_forward(self, F, x):
+        x = self.se(x)
         route = self.body(x)
         tip = self.tip(route)
         return route, tip
 
 
+# ----------------------------------------------------------------------------->
 class hsigmoid(gluon.HybridBlock):
     def hybrid_forward(self, F, x, *args, **kwargs):
         out = mx.sym.clip(x + 3, a_min=0, a_max=6) / 6
@@ -250,6 +258,7 @@ class SE_Block(gluon.HybridBlock):
 
     def hybrid_forward(self, F, x, *args, **kwargs):
         return x * self.se(x)
+# <-----------------------------------------------------------------------------
 
 
 class YOLOV3(gluon.HybridBlock):
@@ -319,7 +328,7 @@ class YOLOV3(gluon.HybridBlock):
             self.yolo_outputs = nn.HybridSequential()
             # se_operator
             # ----------------------------------------------------------------------------->
-            self.se_blocks = nn.HybridSequential()
+
             # <-----------------------------------------------------------------------------
             # note that anchors and strides should be used in reverse order
             for i, stage, channel, anchor, stride in zip(
@@ -334,7 +343,7 @@ class YOLOV3(gluon.HybridBlock):
                     self.transitions.add(_conv2d(channel, 1, 0, 1,
                                                  norm_layer=norm_layer, norm_kwargs=norm_kwargs))
                 # ----------------------------------------------------------------------------->
-                self.se_blocks.add(SE_Block(channel))
+
                 # <-----------------------------------------------------------------------------
 
     @property
@@ -390,7 +399,7 @@ class YOLOV3(gluon.HybridBlock):
             routes.append(x)
 
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
-        for i, block, output, se in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs, self.se_blocks):
+        for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
             x, tip = block(x)
             if autograd.is_training():
                 dets, box_centers, box_scales, objness, class_pred, anchors, offsets = output(tip)
@@ -418,7 +427,7 @@ class YOLOV3(gluon.HybridBlock):
 
             # se_operator
             # ----------------------------------------------------------------------------->
-            x = se(x)
+
             # <-----------------------------------------------------------------------------
 
         if autograd.is_training():
