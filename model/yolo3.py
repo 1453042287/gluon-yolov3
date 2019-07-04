@@ -230,6 +230,28 @@ class YOLODetectionBlockV3(gluon.HybridBlock):
         return route, tip
 
 
+class hsigmoid(gluon.HybridBlock):
+    def hybrid_forward(self, F, x, *args, **kwargs):
+        out = mx.sym.clip(x + 3, a_min=0, a_max=6) / 6
+        return out
+
+
+class SE_Block(gluon.HybridBlock):
+    def __init__(self, channel, reduction=4, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+        super(SE_Block, self).__init__(**kwargs)
+        with self.name_scope():
+            self.se = nn.HybridSequential(prefix='')
+            self.se.add(nn.Conv2D(channel // reduction, kernel_size=1, strides=1, padding=0, use_bias=False))
+            self.se.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
+            self.se.add(nn.LeakyReLU(0.1))
+            self.se.add(nn.Conv2D(channel, kernel_size=1, strides=1, padding=0, use_bias=False))
+            self.se.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
+            self.se.add(hsigmoid())
+
+    def hybrid_forward(self, F, x, *args, **kwargs):
+        return x * self.se(x)
+
+
 class YOLOV3(gluon.HybridBlock):
     """YOLO V3 detection network.
     Reference: https://arxiv.org/pdf/1804.02767.pdf.
@@ -295,6 +317,10 @@ class YOLOV3(gluon.HybridBlock):
             self.transitions = nn.HybridSequential()
             self.yolo_blocks = nn.HybridSequential()
             self.yolo_outputs = nn.HybridSequential()
+            # se_operator
+            # ----------------------------------------------------------------------------->
+
+            # <-----------------------------------------------------------------------------
             # note that anchors and strides should be used in reverse order
             for i, stage, channel, anchor, stride in zip(
                     range(len(stages)), stages, channels, anchors[::-1], strides[::-1]):
@@ -386,6 +412,12 @@ class YOLOV3(gluon.HybridBlock):
             upsample = _upsample(x, stride=2)
             route_now = routes[::-1][i + 1]
             x = F.concat(F.slice_like(upsample, route_now * 0, axes=(2, 3)), route_now, dim=1)
+
+            # se_operator
+            # ----------------------------------------------------------------------------->
+            se_block = SE_Block(x.shape[1])
+            x = se_block(x)
+            # <-----------------------------------------------------------------------------
 
         if autograd.is_training():
             # during training, the network behaves differently since we don't need detection results
